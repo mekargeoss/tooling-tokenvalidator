@@ -1,5 +1,6 @@
 # 2026 Mekarge OSS and Maintainers
-# Licensed under the MIT License. See LICENSE file in the project root for full license information.
+# Licensed under the MIT License. See LICENSE file in the project root
+# for full license information.
 
 from __future__ import annotations
 
@@ -8,10 +9,11 @@ import json
 import sys
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any, cast
 
 import httpx
 from jose import jwt
+
 
 @dataclass
 class A3Discovery:
@@ -20,13 +22,16 @@ class A3Discovery:
     authorization_endpoint: str
     token_endpoint: str
 
+
 def fetch_discovery(issuer: str, timeout: float = 10.0) -> A3Discovery:
     issuer = issuer.rstrip("/")
-    url = f"https://a3.mekarge.com/auth/{issuer}/.well-known/openid-configuration"
+    url = (
+        f"https://a3.mekarge.com/auth/{issuer}/.well-known/openid-configuration"
+    )
     with httpx.Client(timeout=timeout, verify=True) as client:
-        r = client.get(url)
-        r.raise_for_status()
-        data = r.json()
+        response = client.get(url)
+        response.raise_for_status()
+        data = response.json()
     if "jwks_uri" not in data:
         raise RuntimeError("Discovery document missing 'jwks_uri'")
     return A3Discovery(
@@ -36,22 +41,25 @@ def fetch_discovery(issuer: str, timeout: float = 10.0) -> A3Discovery:
         token_endpoint=data.get("token_endpoint"),
     )
 
-def fetch_jwks(jwks_uri: str, timeout: float = 10.0) -> Dict[str, Any]:
-    with httpx.Client(timeout=timeout, verify=True) as client:
-        r = client.get(jwks_uri)
-        r.raise_for_status()
-        return r.json()
 
-def choose_jwk(jwks: Dict[str, Any], kid: Optional[str]) -> Dict[str, Any]:
+def fetch_jwks(jwks_uri: str, timeout: float = 10.0) -> dict[str, Any]:
+    with httpx.Client(timeout=timeout, verify=True) as client:
+        response = client.get(jwks_uri)
+        response.raise_for_status()
+        return cast(dict[str, Any], response.json())
+
+
+def choose_jwk(jwks: dict[str, Any], kid: str | None) -> dict[str, Any]:
     keys = jwks.get("keys", [])
     if not keys:
         raise RuntimeError("JWKS has no keys")
     if kid is None:
-        return keys[0]
-    for k in keys:
-        if k.get("kid") == kid:
-            return k
+        return cast(dict[str, Any], keys[0])
+    for key in keys:
+        if key.get("kid") == kid:
+            return cast(dict[str, Any], key)
     raise RuntimeError(f"No matching JWK found for kid={kid}")
+
 
 def claim_contains_scope(claim_scope: Any, required_scope: str) -> bool:
     if claim_scope is None:
@@ -60,14 +68,14 @@ def claim_contains_scope(claim_scope: Any, required_scope: str) -> bool:
     parts = claim_scope.split()
     return required_scope in parts
 
+
 def decode_and_verify_jwt_access_token(
     token: str,
     discovery_issuer: str,
-    jwks: Dict[str, Any],
-    audience: Optional[str],
-    scope_token: Optional[str],
-) -> Dict[str, Any]:
-
+    jwks: dict[str, Any],
+    audience: str | None,
+    scope_token: str | None,
+) -> dict[str, Any]:
     header = jwt.get_unverified_header(token)
     kid = header.get("kid")
     jwk_key = choose_jwk(jwks, kid)
@@ -85,40 +93,71 @@ def decode_and_verify_jwt_access_token(
     claims = jwt.decode(
         token,
         jwk_key,
-        algorithms=[jwk_key.get("alg", "RS256")] if jwk_key.get("alg") else None,
+        algorithms=[jwk_key.get("alg", "RS256")]
+        if jwk_key.get("alg")
+        else None,
         issuer=discovery_issuer.rstrip("/"),
         audience=audience,
         options=options,
     )
 
-    if scope_token:
-        if not claim_contains_scope(claims.get("scope"), scope_token):
-            raise RuntimeError(f"Required scope '{scope_token}' not present in token scope={claims.get('scope')}")
+    if scope_token and not claim_contains_scope(
+        claims.get("scope"), scope_token
+    ):
+        raise RuntimeError(f"Required scope '{scope_token}' not present")
 
-    return claims
+    return cast(dict[str, Any], claims)
 
 
-def read_token_from_args(token: Optional[str], token_file: Optional[str]) -> str:
+def read_token_from_args(token: str | None, token_file: str | None) -> str:
     if token and token_file:
         raise ValueError("Use either --token or --token-file, not both.")
     if token:
         return token.strip()
     if token_file:
-        with open(token_file, "r", encoding="utf-8") as f:
+        with open(token_file, encoding="utf-8") as f:
             return f.read().strip()
 
     if not sys.stdin.isatty():
         return sys.stdin.read().strip()
-    raise ValueError("No token provided. Use --token, --token-file, or pipe via stdin.")
+    raise ValueError(
+        "No token provided. Use --token, --token-file, or pipe via stdin."
+    )
+
 
 def main() -> int:
-    p = argparse.ArgumentParser(description="Mekarge A3 Access Token validation tool. Use with tokens signed with asymmetric keys (i.e RS256).")
-    p.add_argument("--issuer-path", required=True, help="Issuer Path defined for the Environment (e.g., alias-00000000000000000000000000000000)")
+    p = argparse.ArgumentParser(
+        description=(
+            "Mekarge A3 Access Token validation tool."
+            "Use with tokens signed with asymmetric keys (i.e RS256)."
+        )
+    )
+    p.add_argument(
+        "--issuer-path",
+        required=True,
+        help=(
+            "Issuer Path defined for the Environment"
+            " (e.g., alias-00000000000000000000000000000000)"
+        ),
+    )
     p.add_argument("--token", help="Access Token string (JWT).")
-    p.add_argument("--token-file", help="Path to a file containing the access token.")
-    p.add_argument("--aud", help="Expected audience (aud). If omitted, aud validation is skipped.")
-    p.add_argument("--scope", help="Expected scope token. If omitted, scope token check is skipped.")
-    p.add_argument("--timeout", type=float, default=10.0, help="HTTP timeout seconds (default 10)")
+    p.add_argument(
+        "--token-file", help="Path to a file containing the access token."
+    )
+    p.add_argument(
+        "--aud",
+        help="Expected audience (aud). If omitted, aud validation is skipped.",
+    )
+    p.add_argument(
+        "--scope",
+        help="Expected scope token. If omitted, scope token check is skipped.",
+    )
+    p.add_argument(
+        "--timeout",
+        type=float,
+        default=10.0,
+        help="HTTP timeout seconds (default 10)",
+    )
     args = p.parse_args()
 
     token = read_token_from_args(args.token, args.token_file)

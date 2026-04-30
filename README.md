@@ -1,11 +1,11 @@
-# Mekarge Access Token Validaton Tool (CLI)
+# Mekarge Access Token Validation Tool (CLI)
 
 A standalone Python CLI tool that validates **Access Tokens** obtained from Mekarge A3.
 
 The tool can validate **Access Tokens** signed by RS256 using discovery via `.well-known/openid-configuration`.
 
 The tool makes standard claim validation (`iss`, `exp`) as well as some optional checks such as:
-  * 'aud'
+  * `aud`
   * `scope`
 
 ## Requirements
@@ -91,8 +91,34 @@ echo "$ACCESS_TOKEN" | python app/main.py \
 
 | Code | Meaning       |
 | ---- | ------------- |
-| 0    | Token valid   |
-| 1    | Token invalid |
+| 0    | Token is valid   |
+| 1    | Token is invalid |
+
+## Development
+
+Install development dependencies:
+
+```bash
+pip install -r requirements-dev.txt
+```
+
+Formatting:
+
+```bash
+ruff format .
+```
+
+Linter:
+
+```bash
+ruff check .
+```
+
+Type Checker:
+
+```bash
+mypy .
+```
 
 ## License
 
