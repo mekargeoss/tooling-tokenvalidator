@@ -1,0 +1,11 @@
+name: Main CI
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  checks:
+    uses: ./.github/workflows/python-checks.yml
+
